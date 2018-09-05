@@ -1,12 +1,8 @@
 library transition_to_image;
 
-import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:collection/collection.dart' show ListEquality;
 import 'package:flutter/material.dart';
-
-import 'package:flutter_advanced_networkimage/utils.dart';
 
 class TransitionToImage extends StatefulWidget {
   const TransitionToImage(
@@ -235,6 +231,7 @@ class _TransitionToImageState extends State<TransitionToImage>
             _status = _TransitionStatus.completed;
           break;
         case _TransitionStatus.completed:
+          _imageStream.removeListener(_updateImage);
           break;
       }
     });
@@ -252,31 +249,25 @@ class _TransitionToImageState extends State<TransitionToImage>
       if (reload) {
         debugPrint('Reloading image.');
         _imageProvider.evict();
-        _imageStream =
-            _imageProvider.resolve(createLocalImageConfiguration(context));
       }
       setState(() {
         _status = _TransitionStatus.loading;
         _loadFailed = false;
       });
       oldImageStream?.removeListener(_updateImage);
-      _imageStream.addListener(_updateImage);
+      _imageStream.addListener(_updateImage, onError: _catchBadImage);
     }
   }
 
   _updateImage(ImageInfo info, bool synchronousCall) {
     _imageInfo = info;
-    if (_imageInfo != null) {
-      _imageInfo.image
-          .toByteData(format: ImageByteFormat.png)
-          .then((ByteData data) {
-        if (ListEquality().equals(data.buffer.asUint8List(), emptyImage) ||
-            ListEquality().equals(data.buffer.asUint8List(), emptyImage2)) {
-          setState(() => _loadFailed = true);
-        }
-      });
-      _resolveStatus();
-    }
+    if (_imageInfo != null) _resolveStatus();
+  }
+
+  _catchBadImage(dynamic exception, StackTrace stackTrace) {
+    debugPrint(exception.toString());
+    setState(() => _loadFailed = true);
+    _resolveStatus();
   }
 
   @override
