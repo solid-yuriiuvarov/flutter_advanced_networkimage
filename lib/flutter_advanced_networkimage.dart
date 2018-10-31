@@ -8,13 +8,12 @@ import 'dart:ui' as ui show instantiateImageCodec, Codec;
 import 'dart:ui' show hashValues;
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_advanced_networkimage/utils.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
-
-import 'package:flutter_advanced_networkimage/utils.dart';
 
 class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
   const AdvancedNetworkImage(
@@ -69,9 +68,7 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
         Directory(join((await getTemporaryDirectory()).path, 'imagecache'));
     String uId = _uid(url);
 
-    return useDiskCache
-        ? File(join(_cacheImagesDirectory.path, uId)).path
-        : null;
+    return useDiskCache ? File(join(_cacheImagesDirectory.path, uId)).path : null;
   }
 
   @override
@@ -106,8 +103,8 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
       debugPrint(e.toString());
     }
 
-    Uint8List imageData = await _loadFromRemote(
-        key.url, key.header, key.retryLimit, key.retryDuration);
+    Uint8List imageData =
+        await _loadFromRemote(key.url, key.header, key.retryLimit, key.retryDuration);
     if (imageData != null) {
       if (key.loadedCallback != null) key.loadedCallback();
       try {
@@ -128,8 +125,7 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
   /// 1. Check if cache directory exist. If not exist, create it.
   /// 2. Check if cached file([uId]) exist. If yes, load the cache,
   ///   otherwise go to download step.
-  Future<Uint8List> _loadFromDiskCache(
-      AdvancedNetworkImage key, String uId) async {
+  Future<Uint8List> _loadFromDiskCache(AdvancedNetworkImage key, String uId) async {
     Directory _cacheImagesDirectory =
         Directory(join((await getTemporaryDirectory()).path, 'imagecache'));
     if (_cacheImagesDirectory.existsSync()) {
@@ -141,25 +137,31 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
       await _cacheImagesDirectory.create();
     }
 
-    Uint8List imageData = await _loadFromRemote(
-        key.url, key.header, key.retryLimit, key.retryDuration);
+    Uint8List imageData =
+        await _loadFromRemote(key.url, key.header, key.retryLimit, key.retryDuration);
     if (imageData != null) {
-      await (File(join(_cacheImagesDirectory.path, uId)))
-          .writeAsBytes(imageData);
+      await (File(join(_cacheImagesDirectory.path, uId))).writeAsBytes(imageData);
       return imageData;
     }
 
     return null;
   }
 
+  static Future injectFile(String filePath, String url) async {
+    List injectable = await File(filePath).readAsBytes();
+    if (injectable != null) {
+      await File(join(join((await getTemporaryDirectory()).path, 'imagecache'), _uid(url)))
+          .writeAsBytes(injectable);
+    }
+  }
+
   /// Fetch the image from network.
-  Future<Uint8List> _loadFromRemote(String url, Map<String, String> header,
-      int retryLimit, Duration retryDuration) async {
+  Future<Uint8List> _loadFromRemote(
+      String url, Map<String, String> header, int retryLimit, Duration retryDuration) async {
     if (retryLimit < 0) retryLimit = 0;
 
     /// Retry mechanism.
-    Future<http.Response> run<T>(
-        Future f(), int retryLimit, Duration retryDuration) async {
+    Future<http.Response> run<T>(Future f(), int retryLimit, Duration retryDuration) async {
       for (int t = 0; t < retryLimit + 1; t++) {
         try {
           http.Response res = await f();
@@ -167,8 +169,7 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
             if (res.statusCode == 200)
               return res;
             else
-              debugPrint('Load error, response status code: ' +
-                  res.statusCode.toString());
+              debugPrint('Load error, response status code: ' + res.statusCode.toString());
           }
         } catch (_) {}
         await Future.delayed(retryDuration);
@@ -190,7 +191,7 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
     return null;
   }
 
-  String _uid(String str) =>
+  static String _uid(String str) =>
       md5.convert(utf8.encode(str)).toString().toLowerCase().substring(0, 9);
 
   @override
@@ -206,8 +207,8 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
   }
 
   @override
-  int get hashCode => hashValues(url, scale, header, useDiskCache, retryLimit,
-      retryDuration, timeoutDuration);
+  int get hashCode =>
+      hashValues(url, scale, header, useDiskCache, retryLimit, retryDuration, timeoutDuration);
   @override
   String toString() => '$runtimeType('
       '"$url",'
@@ -238,9 +239,7 @@ Future<int> getDiskCachedImagesSize() async {
       Directory(join((await getTemporaryDirectory()).path, 'imagecache'));
   int size = 0;
   try {
-    _cacheImagesDirectory
-        .listSync()
-        .forEach((var file) => size += file.statSync().size);
+    _cacheImagesDirectory.listSync().forEach((var file) => size += file.statSync().size);
     return size;
   } catch (_) {
     return null;
