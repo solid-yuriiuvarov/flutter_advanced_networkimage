@@ -149,6 +149,10 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
 
   static Future injectFile(String filePath, String url) async {
     List injectable = await File(filePath).readAsBytes();
+    Directory cacheDirectory = Directory(join((await getTemporaryDirectory()).path, 'imagecache'));
+
+    if (!cacheDirectory.existsSync()) cacheDirectory.createSync();
+
     if (injectable != null) {
       await File(join(join((await getTemporaryDirectory()).path, 'imagecache'), _uid(url)))
           .writeAsBytes(injectable);
