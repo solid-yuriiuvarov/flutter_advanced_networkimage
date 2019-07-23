@@ -1,60 +1,67 @@
-library transition_to_image;
-
-import 'dart:typed_data';
 import 'dart:ui';
+import 'dart:typed_data';
 
-import 'package:collection/collection.dart' show ListEquality;
 import 'package:flutter/material.dart';
 
-import 'package:flutter_advanced_networkimage/utils.dart';
+import 'flutter_advanced_networkimage.dart';
+import 'raw_image.dart' show MyRawImage;
+
+
+typedef Widget LoadingWidgetBuilder(
+    BuildContext context,
+    double progress,
+    Uint8List imageData,
+    );
 
 class TransitionToImage extends StatefulWidget {
-  const TransitionToImage(
-    this.image, {
+  const TransitionToImage({
     Key key,
-    this.placeholder: const Icon(Icons.clear),
-    this.duration: const Duration(milliseconds: 300),
-    this.tween,
-    this.curve: Curves.easeInOut,
-    this.transitionType: TransitionType.fade,
+    @required this.image,
     this.width,
     this.height,
+    this.borderRadius,
+    this.color,
     this.blendMode,
     this.fit: BoxFit.contain,
     this.alignment = Alignment.center,
     this.repeat = ImageRepeat.noRepeat,
     this.matchTextDirection = false,
-    this.loadingWidget = const CircularProgressIndicator(),
-    this.enableRefresh: true,
+    this.invertColors = false,
+    // this.imageFilter,
+    this.placeholder: const Icon(Icons.clear),
+    this.duration: const Duration(milliseconds: 300),
+    this.tween,
+    this.curve: Curves.easeInOut,
+    this.transitionType: TransitionType.fade,
+    this.loadingWidget = const Center(child: const CircularProgressIndicator()),
+    this.loadingWidgetBuilder,
+    this.enableRefresh: false,
+    this.disableMemoryCache: false,
+    this.disableMemoryCacheIfFailed: false,
+    this.loadedCallback,
+    this.loadFailedCallback,
+    this.forceRebuildWidget: false,
+    this.printError = false,
   })  : assert(image != null),
+        assert(fit != null),
+        assert(alignment != null),
+        assert(repeat != null),
+        assert(matchTextDirection != null),
+        assert(invertColors != null),
         assert(placeholder != null),
         assert(duration != null),
         assert(curve != null),
         assert(transitionType != null),
         assert(loadingWidget != null),
-        assert(fit != null),
-        assert(alignment != null),
-        assert(repeat != null),
-        assert(matchTextDirection != null),
+        assert(enableRefresh != null),
+        assert(disableMemoryCache != null),
+        assert(disableMemoryCacheIfFailed != null),
+        assert(forceRebuildWidget != null),
+        assert(printError != null),
         super(key: key);
 
   /// The target image that is displayed.
   final ImageProvider image;
-
-  /// Widget displayed while the target [image] failed to load.
-  final Widget placeholder;
-
-  /// The duration of the fade-out animation for the result.
-  final Duration duration;
-
-  /// The tween of the fade-out animation for the result.
-  final Tween tween;
-
-  /// The curve of the fade-out animation for the result.
-  final Curve curve;
-
-  /// The transition type of the fade-out animation for the result.
-  final TransitionType transitionType;
 
   /// If non-null, require the image to have this width.
   ///
@@ -72,10 +79,25 @@ class TransitionToImage extends StatefulWidget {
   /// also affected by the scale factor.
   final double height;
 
-  /// How to inscribe the image into the space allocated during layout.
+  /// The border radius of the rounded corners.
   ///
-  /// The default varies based on the other fields. See the discussion at
-  /// [paintImage].
+  /// Values are clamped so that horizontal and vertical radii sums do not
+  /// exceed width/height.
+  ///
+  /// This value is ignored if [clipper] is non-null.
+  final BorderRadius borderRadius;
+
+  /// If non-null, this color is blended with each image pixel using [colorBlendMode].
+  final Color color;
+
+  /// Used to combine [color] with this image.
+  ///
+  /// The default is [BlendMode.srcIn]. In terms of the blend mode, [color] is
+  /// the source and this image is the destination.
+  ///
+  /// See also:
+  ///
+  ///  * [BlendMode], which includes an illustration of the effect of each blend mode.
   final BlendMode blendMode;
 
   /// How to inscribe the image into the space allocated during layout.
@@ -128,28 +150,74 @@ class TransitionToImage extends StatefulWidget {
   /// scope.
   final bool matchTextDirection;
 
-  /// Widget displayed while the target [image] is loading.
+  /// Whether the colors of the image are inverted when drawn.
+  ///
+  /// inverting the colors of an image applies a new color filter to the paint.
+  /// If there is another specified color filter, the invert will be applied
+  /// after it. This is primarily used for implementing smart invert on iOS.
+  ///
+  /// See also:
+  ///
+  ///  * [Paint.invertColors], for the dart:ui implementation.
+  final bool invertColors;
+
+  // final ImageFilter imageFilter;
+
+  /// Widget displayed while the target [image] failed to load.
+  final Widget placeholder;
+
+  /// The duration of the fade-out animation for the result.
+  final Duration duration;
+
+  /// The tween of the fade-out animation for the result.
+  final Tween tween;
+
+  /// The curve of the fade-out animation for the result.
+  final Curve curve;
+
+  /// The transition type of the fade-out animation for the result.
+  final TransitionType transitionType;
+
+  /// Widget displayed when the target [image] is loading.
   final Widget loadingWidget;
 
-  /// Enable a interior  [GestureDetector] for manually refreshing.
+  /// Widget builder (with loading progress) displayed
+  /// when the target [image] is loading and loadingWidget is null.
+  final LoadingWidgetBuilder loadingWidgetBuilder;
+
+  /// Enable an internal [GestureDetector] for manually refreshing.
   final bool enableRefresh;
 
-  reloadImage() {
-    _reloadListeners.forEach((listener) {
-      if (listener.keys.first == image.hashCode.toString()) {
-        (listener.values.first)();
-      }
-    });
-  }
+  /// If set to enable, the image provider will be evicted from [ImageCache].
+  final bool disableMemoryCache;
+
+  /// If set to enable, the image provider will be evicted from [ImageCache]
+  /// if the image failed to load.
+  final bool disableMemoryCacheIfFailed;
+
+  /// The callback will fire when the image loaded.
+  final VoidCallback loadedCallback;
+
+  /// The callback will fire when the image failed to load.
+  final VoidCallback loadFailedCallback;
+
+  /// If set to enable, the [loadedCallback] or [loadFailedCallback]
+  /// will fire again.
+  final bool forceRebuildWidget;
+
+  /// Print error.
+  final bool printError;
 
   @override
   _TransitionToImageState createState() => _TransitionToImageState();
 }
 
 enum _TransitionStatus {
+  start,
   loading,
   animating,
   completed,
+  failed,
 }
 enum TransitionType {
   slide,
@@ -157,23 +225,36 @@ enum TransitionType {
 }
 
 class _TransitionToImageState extends State<TransitionToImage>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   AnimationController _controller;
   Animation _animation;
   Tween<double> _fadeTween = Tween(begin: 0.0, end: 1.0);
   Tween<Offset> _slideTween =
-      Tween(begin: const Offset(0.0, -1.0), end: Offset.zero);
+  Tween(begin: const Offset(0.0, -1.0), end: Offset.zero);
 
   ImageStream _imageStream;
   ImageInfo _imageInfo;
-  bool _loadFailed = false;
+  Uint8List _imageData;
+  double _progress = 0.0;
 
-  _TransitionStatus _status = _TransitionStatus.loading;
+  _TransitionStatus _status = _TransitionStatus.start;
 
   ImageProvider get _imageProvider => widget.image;
 
+  // bool _isProgressiveJPEG(List<int> data) {
+  //   if (data.contains(0xFFD8)) {
+  //     int count = 0;
+  //     for (int el in data) {
+  //       if (el == 0xFFDA) count++;
+  //       if (count > 1) return true;
+  //     }
+  //   }
+
+  //   return false;
+  // }
+
   @override
-  initState() {
+  void initState() {
     _controller = AnimationController(vsync: this, duration: widget.duration)
       ..addListener(() => setState(() {}));
     if (widget.transitionType == TransitionType.fade) {
@@ -182,50 +263,50 @@ class _TransitionToImageState extends State<TransitionToImage>
       _slideTween = widget.tween ??
           Tween(begin: const Offset(0.0, -1.0), end: Offset.zero);
     }
-    _reloadListeners.removeWhere((listener) =>
-        listener.keys.first == _imageProvider.hashCode.toString());
-    _reloadListeners.add(
-        {_imageProvider.hashCode.toString(): () => _getImage(reload: true)});
+    _animation = CurvedAnimation(parent: _controller, curve: widget.curve);
     super.initState();
   }
 
   @override
-  didChangeDependencies() {
+  void didChangeDependencies() {
     _getImage();
     super.didChangeDependencies();
   }
 
   @override
-  didUpdateWidget(TransitionToImage oldWidget) {
+  void didUpdateWidget(TransitionToImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.image != oldWidget.image) _getImage();
+    if ((widget.image != oldWidget.image) || widget.forceRebuildWidget)
+      _getImage();
   }
 
   @override
-  dispose() {
-    _imageStream.removeListener(_updateImage);
+  void reassemble() {
+    _getImage();
+    super.reassemble();
+  }
+
+  @override
+  void dispose() {
+    _imageStream.removeListener(
+        ImageStreamListener(_updateImage, onError: _catchBadImage));
     _controller.dispose();
-    _reloadListeners.removeWhere((listener) =>
-        listener.keys.first == _imageProvider.hashCode.toString());
     super.dispose();
   }
 
-  _resolveStatus() {
-    try {
-      setState(() {});
-    } catch (_) {
-      _imageStream?.removeListener(_updateImage);
-      return;
-    }
+  void _resolveStatus() {
     setState(() {
       switch (_status) {
+        case _TransitionStatus.start:
+          if (_imageInfo == null) {
+            _status = _TransitionStatus.loading;
+          } else {
+            _status = _TransitionStatus.completed;
+            _controller.forward(from: 1.0);
+          }
+          break;
         case _TransitionStatus.loading:
           if (_imageInfo != null) {
-            _controller.duration = widget.duration;
-            _animation = CurvedAnimation(
-              parent: _controller,
-              curve: widget.curve,
-            );
             _status = _TransitionStatus.animating;
             _controller.forward(from: 0.0);
           }
@@ -236,91 +317,134 @@ class _TransitionToImageState extends State<TransitionToImage>
           break;
         case _TransitionStatus.completed:
           break;
+        case _TransitionStatus.failed:
+          break;
       }
     });
   }
 
-  _getImage({bool reload: false}) {
+  void _getImage({bool reload: false}) {
+    if (reload) {
+      if (widget.printError) debugPrint('Reloading image.');
+
+      _imageProvider.evict();
+    }
+
     final ImageStream oldImageStream = _imageStream;
-    _imageStream =
-        _imageProvider.resolve(createLocalImageConfiguration(context));
+    if (_imageProvider is AdvancedNetworkImage &&
+        widget.loadingWidgetBuilder != null) {
+      var callback = (_imageProvider as AdvancedNetworkImage).loadingProgress;
+      (_imageProvider as AdvancedNetworkImage).loadingProgress =
+          (double progress, List<int> data) {
+        if (mounted) {
+          setState(() {
+            _progress = progress;
+            if (progress > 0.1) _imageData = Uint8List.fromList(data);
+          });
+        } else {
+          return oldImageStream?.removeListener(
+              ImageStreamListener(_updateImage, onError: _catchBadImage));
+        }
+
+        if (callback != null) callback(progress, data);
+      };
+    }
+
+    _imageStream = _imageProvider.resolve(createLocalImageConfiguration(
+      context,
+      size: widget.width != null && widget.height != null
+          ? Size(widget.width, widget.height)
+          : null,
+    ));
     if (_imageInfo != null &&
         !reload &&
         (_imageStream.key == oldImageStream?.key)) {
+      if (widget.forceRebuildWidget) {
+        if (widget.loadedCallback != null)
+          widget.loadedCallback();
+        else if (widget.loadFailedCallback != null) widget.loadFailedCallback();
+      }
       setState(() => _status = _TransitionStatus.completed);
     } else {
-      if (reload) {
-        debugPrint('Reloading image.');
-        _imageProvider.evict();
-        _imageStream =
-            _imageProvider.resolve(createLocalImageConfiguration(context));
-      }
-      setState(() {
-        _status = _TransitionStatus.loading;
-        _loadFailed = false;
-      });
-      oldImageStream?.removeListener(_updateImage);
-      _imageStream.addListener(_updateImage);
-    }
-  }
+      setState(() => _status = _TransitionStatus.start);
+      oldImageStream?.removeListener(
+          ImageStreamListener(_updateImage, onError: _catchBadImage));
 
-  _updateImage(ImageInfo info, bool synchronousCall) {
-    _imageInfo = info;
-    if (_imageInfo != null) {
-      _imageInfo.image
-          .toByteData(format: ImageByteFormat.png)
-          .then((ByteData data) {
-        if (ListEquality().equals(data.buffer.asUint8List(), emptyImage) ||
-            ListEquality().equals(data.buffer.asUint8List(), emptyImage2)) {
-          setState(() => _loadFailed = true);
-        }
-      });
+      _imageStream.addListener(
+        ImageStreamListener(_updateImage, onError: _catchBadImage),
+      );
       _resolveStatus();
     }
   }
 
+  void _updateImage(ImageInfo info, bool synchronousCall) {
+    _imageInfo = info;
+    if (_imageInfo != null) {
+      _resolveStatus();
+      if (widget.loadedCallback != null) widget.loadedCallback();
+      if (widget.disableMemoryCache) _imageProvider.evict();
+    }
+  }
+
+  void _catchBadImage(dynamic exception, StackTrace stackTrace) {
+    if (widget.printError) debugPrint('$exception\n$stackTrace');
+    setState(() => _status = _TransitionStatus.failed);
+    _resolveStatus();
+
+    if (widget.loadFailedCallback != null) widget.loadFailedCallback();
+    if (widget.disableMemoryCache || widget.disableMemoryCacheIfFailed)
+      _imageProvider.evict();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: widget.width,
-      height: widget.height,
-      color: Color(0),
-      child: (_loadFailed)
-          ? (widget.enableRefresh)
-              ? GestureDetector(
-                  onTap: () => _getImage(reload: true),
-                  child: Container(
-                    width: widget.width,
-                    height: widget.height,
-                    color: Color(0),
-                    child: widget.placeholder,
-                  ),
-                )
-              : widget.placeholder
-          : (_status == _TransitionStatus.loading)
-              ? Center(child: widget.loadingWidget)
-              : (widget.transitionType == TransitionType.fade)
-                  ? FadeTransition(
-                      opacity: _fadeTween.animate(_animation), child: _child())
-                  : SlideTransition(
-                      position: _slideTween.animate(_animation),
-                      child: _child()),
+    return _status == _TransitionStatus.failed
+        ? widget.enableRefresh
+        ? GestureDetector(
+      onTap: () => _getImage(reload: true),
+      child: widget.placeholder,
+    )
+        : widget.placeholder
+        : _status == _TransitionStatus.start ||
+        _status == _TransitionStatus.loading
+        ? widget.loadingWidgetBuilder != null
+        ? widget.loadingWidgetBuilder(context, _progress, _imageData)
+        : widget.loadingWidget
+        : widget.transitionType == TransitionType.fade
+        ? FadeTransition(
+      opacity: _fadeTween.animate(_animation),
+      child: widget.borderRadius != null
+          ? ClipRRect(
+        borderRadius: widget.borderRadius,
+        child: buildRawImage(),
+      )
+          : buildRawImage(),
+    )
+        : SlideTransition(
+      position: _slideTween.animate(_animation),
+      child: widget.borderRadius != null
+          ? ClipRRect(
+        borderRadius: widget.borderRadius,
+        child: buildRawImage(),
+      )
+          : buildRawImage(),
     );
   }
 
-  Widget _child() {
-    return RawImage(
-      image: _imageInfo.image,
+  MyRawImage buildRawImage() {
+    return MyRawImage(
+      image: _imageInfo?.image,
       width: widget.width,
       height: widget.height,
+      scale: _imageInfo?.scale ?? 1.0,
+      color: widget.color,
       colorBlendMode: widget.blendMode,
       fit: widget.fit,
       alignment: widget.alignment,
       repeat: widget.repeat,
       matchTextDirection: widget.matchTextDirection,
+      invertColors: widget.invertColors,
+      // imageFilter: widget.imageFilter,
     );
   }
 }
-
-/// Store reload listeners
-List<Map<String, Function>> _reloadListeners = List<Map<String, Function>>();

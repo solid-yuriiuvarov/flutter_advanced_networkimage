@@ -16,9 +16,10 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 
 class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
-  const AdvancedNetworkImage(
+  AdvancedNetworkImage(
     this.url, {
     this.scale: 1.0,
+    this.loadingProgress,
     this.header,
     this.useDiskCache: false,
     this.retryLimit: 5,
@@ -63,6 +64,8 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
   /// The image will be displayed when the image failed to load.
   final Uint8List fallbackImage;
 
+  LoadingProgress loadingProgress;
+
   Future<String> get cachedPath async {
     Directory _cacheImagesDirectory =
         Directory(join((await getTemporaryDirectory()).path, 'imagecache'));
@@ -81,9 +84,9 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
     return MultiFrameImageStreamCompleter(
       codec: _loadAsync(key),
       scale: key.scale,
-      informationCollector: (StringBuffer information) {
-        information.writeln('Image provider: $this');
-        information.write('Image provider: $key');
+      informationCollector: () sync* {
+        yield DiagnosticsProperty<ImageProvider>('Image provider', this);
+        yield DiagnosticsProperty<AdvancedNetworkImage>('Image key', key);
       },
     );
   }
@@ -213,6 +216,7 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
   @override
   int get hashCode =>
       hashValues(url, scale, header, useDiskCache, retryLimit, retryDuration, timeoutDuration);
+
   @override
   String toString() => '$runtimeType('
       '"$url",'

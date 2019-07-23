@@ -1,204 +1,196 @@
-/// WIP
+// WIP, do not use it
 
-library image_cropper;
-
+// import 'dart:math';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'utils.dart';
+
+
 class ImageCropper extends StatefulWidget {
-  ImageCropper(
-    this.image, {
+  ImageCropper({
     Key key,
-    this.minScale: 0.7,
-    this.maxScale: 1.4,
-    this.enableRotate: false,
-    this.onImageCropperChanged,
-  })  : assert(minScale != null),
-        assert(maxScale != null);
+    @required this.child,
+    this.minScale: 1.0,
+    this.maxScale: 3.0,
+    @required this.onCropperChanged,
+  });
 
-  /// The target image that is cropped.
-  final ImageProvider image;
-
-  /// The minimum size for scaling.
+  final Widget child;
   final double minScale;
-
-  /// The maximum size for scaling.
   final double maxScale;
 
-  /// Allow user to rotate the image.
-  final bool enableRotate;
-
-  final ValueChanged<ByteData> onImageCropperChanged;
+  final ValueChanged<Uint8List> onCropperChanged;
 
   @override
   _ImageCropperState createState() => _ImageCropperState();
 }
 
-class _ImageCropperState extends State<ImageCropper>
-    with TickerProviderStateMixin {
+class _ImageCropperState extends State<ImageCropper> {
+  final GlobalKey _key = GlobalKey();
+
   double _zoom = 1.0;
-  double _previewZoom = 1.0;
-  Offset _previewPanOffset = Offset.zero;
-  Offset _panOffset = Offset.zero;
+  double _previousZoom = 1.0;
+  Offset _previousPanOffset = Offset.zero;
+  Offset _pan = Offset.zero;
   Offset _zoomOriginOffset = Offset.zero;
+  double _rotation = 0.0;
+  double _previousRotation = 0.0;
 
-  ImageStream _imageStream;
-  ui.Image _image;
-  // AnimationController _resetZoomController;
-  // AnimationController _resetPanController;
-  // Animation<double> _zoomAnimation;
-  // Animation<Offset> _panOffsetAnimation;
+  Size _childSize = Size.zero;
+  Size _containerSize = Size.zero;
 
-  ImageProvider get _imageProvider => widget.image;
+  Duration _duration = const Duration(milliseconds: 100);
+  Curve _curve = Curves.easeOut;
 
-  @override
-  initState() {
-    // _resetZoomController =
-    //     AnimationController(vsync: this, duration: Duration(milliseconds: 100));
-    // _resetPanController =
-    //     AnimationController(vsync: this, duration: Duration(milliseconds: 100));
-    super.initState();
-  }
-
-  @override
-  didChangeDependencies() {
-    _getImage();
-    super.didChangeDependencies();
-  }
-
-  @override
-  didUpdateWidget(ImageCropper oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.image != oldWidget.image) _getImage();
-  }
-
-  @override
-  dispose() {
-    // _resetZoomController.dispose();
-    // _resetPanController.dispose();
-    _imageStream?.removeListener(_updateImage);
-    super.dispose();
-  }
-
-  _getImage() {
-    final ImageStream oldImageStream = _imageStream;
-    _imageStream =
-        _imageProvider.resolve(createLocalImageConfiguration(context));
-    if (_imageStream.key != oldImageStream?.key) {
-      oldImageStream?.removeListener(_updateImage);
-      _imageStream.addListener(_updateImage);
+  void _onScaleStart(ScaleStartDetails details) {
+    if (_childSize == Size.zero) {
+      final RenderBox renderbox = _key.currentContext.findRenderObject();
+      _childSize = renderbox.size;
     }
-  }
-
-  _updateImage(ImageInfo info, _) => setState(() => _image = info.image);
-
-  _onScaleStart(ScaleStartDetails details) {
     setState(() {
       _zoomOriginOffset = details.focalPoint;
-      _previewPanOffset = _panOffset;
-      _previewZoom = _zoom;
+      _previousPanOffset = _pan;
+      _previousZoom = _zoom;
+      _previousRotation = _rotation;
     });
   }
 
-  _onScaleUpdate(ScaleUpdateDetails details) {
-    // Size _boundarySize = Size(_image.width / 2, _image.height / 2);
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    Size boundarySize = _boundarySize;
+
+    Size _marginSize = Size(100.0, 100.0);
+
+    _duration = const Duration(milliseconds: 50);
+    _curve = Curves.easeOut;
+
+    // apply rotate
+    // setState(() {
+    //   _rotation = (_previousRotation + details.rotation).clamp(-pi, pi);
+    // });
+
     if (details.scale != 1.0) {
       setState(() {
-        _zoom = (_previewZoom * details.scale)
+        _zoom = (_previousZoom * details.scale)
             .clamp(widget.minScale, widget.maxScale);
       });
     }
-    setState(() {
-      Offset _panRealOffset = details.focalPoint -
-          ((_zoomOriginOffset - _previewPanOffset) / _previewZoom) * _zoom;
+  }
 
-      _panOffset = _panRealOffset;
-      // _panOffset = Offset(
-      //     _panRealOffset.dx.clamp(
-      //       -_boundarySize.width / _zoom,
-      //       _boundarySize.width / _zoom,
-      //     ),
-      //     _panRealOffset.dy.clamp(
-      //       -_boundarySize.height / _zoom,
-      //       _boundarySize.height / _zoom,
-      //     ));
+  void _onScaleEnd(ScaleEndDetails details) {
+    Size boundarySize = _boundarySize;
+  }
+
+  Size get _boundarySize {
+    Size _boundarySize = Size(
+      (_containerSize.width == _childSize.width)
+          ? (_containerSize.width - _childSize.width / _zoom).abs()
+          : (_containerSize.width - _childSize.width * _zoom).abs() / _zoom,
+      (_containerSize.height == _childSize.height)
+          ? (_containerSize.height - _childSize.height / _zoom).abs()
+          : (_containerSize.height - _childSize.height * _zoom).abs() / _zoom,
+    );
+
+    return _boundarySize;
+  }
+
+  void _handleDoubleTap() {
+    _duration = const Duration(milliseconds: 250);
+    _curve = Curves.easeInOut;
+
+    setState(() {
+      _zoom = 0.0;
+      _pan = Offset.zero;
+      _rotation = 0.0;
+      _previousZoom = 0.0;
+      _zoomOriginOffset = Offset.zero;
+      _previousPanOffset = Offset.zero;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_image == null) return Center(child: CircularProgressIndicator());
-
     return GestureDetector(
       onScaleStart: _onScaleStart,
       onScaleUpdate: _onScaleUpdate,
-      onDoubleTap: () {
-        setState(() {
-          _panOffset = Offset.zero;
-          _zoom = 1.0;
-        });
-      },
-      child: CustomPaint(
-        painter: _GesturePainter(
-          _image,
-          _zoom,
-          _panOffset,
-          widget.onImageCropperChanged,
+      onDoubleTap: _handleDoubleTap,
+      child: ClipRect(
+        child: Stack(
+          children: <Widget>[
+            _AnimatedCropper(
+              duration: _duration,
+              curve: _curve,
+              zoom: _zoom,
+              panOffset: _pan,
+              rotation: _rotation,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  _containerSize =
+                      Size(constraints.maxWidth, constraints.maxHeight);
+                  return Center(
+                    child: Container(key: _key, child: widget.child),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _GesturePainter extends CustomPainter {
-  const _GesturePainter(
-    this.image,
-    this.zoom,
-    this.offset,
-    this.onImageCropperChanged,
-  )   : assert(image != null),
-        assert(zoom != null),
-        assert(offset != null);
+class _AnimatedCropper extends ImplicitlyAnimatedWidget {
+  const _AnimatedCropper({
+    Duration duration,
+    Curve curve = Curves.linear,
+    @required this.zoom,
+    @required this.panOffset,
+    @required this.rotation,
+    @required this.child,
+  }) : super(duration: duration, curve: curve);
 
-  final ui.Image image;
   final double zoom;
-  final Offset offset;
-  final ValueChanged<ByteData> onImageCropperChanged;
+  final Offset panOffset;
+  final double rotation;
+  final Widget child;
 
   @override
-  paint(Canvas canvas, Size size) {
-    Rect displayRect = offset & (size * zoom);
-    Rect cropRect = (offset + Offset(100.0, 0.0)) & (size * zoom);
+  ImplicitlyAnimatedWidgetState<ImplicitlyAnimatedWidget> createState() =>
+      _AnimatedCropperState();
+}
 
-    final _recorder = ui.PictureRecorder();
-    final cropperCanvas = Canvas(_recorder);
+class _AnimatedCropperState extends AnimatedWidgetBaseState<_AnimatedCropper> {
+  DoubleTween _zoom;
+  OffsetTween _panOffset;
+  OffsetTween _zoomOriginOffset;
+  DoubleTween _rotation;
 
-    paintImage(
-      canvas: canvas,
-      rect: displayRect,
-      image: image,
-      fit: BoxFit.contain,
-    );
-    paintImage(
-      canvas: cropperCanvas,
-      rect: cropRect,
-      image: image,
-      fit: BoxFit.contain,
-    );
-
-    _recorder
-        .endRecording()
-        .toImage(image.width.toInt(), image.height.toInt())
-        .toByteData(format: ui.ImageByteFormat.png)
-        .then((data) => onImageCropperChanged(data));
+  @override
+  void forEachTween(visitor) {
+    _zoom = visitor(
+        _zoom, widget.zoom, (dynamic value) => DoubleTween(begin: value));
+    _panOffset = visitor(_panOffset, widget.panOffset,
+            (dynamic value) => OffsetTween(begin: value));
+    _rotation = visitor(_rotation, widget.rotation,
+            (dynamic value) => DoubleTween(begin: value));
   }
 
   @override
-  bool shouldRepaint(_GesturePainter oldPainter) {
-    return oldPainter.image != image ||
-        oldPainter.zoom != zoom ||
-        oldPainter.offset != offset;
+  Widget build(BuildContext context) {
+    return Transform(
+      alignment: Alignment.center,
+      origin: Offset(-_panOffset.evaluate(animation).dx,
+          -_panOffset.evaluate(animation).dy),
+      transform: Matrix4.identity()
+        ..translate(_panOffset.evaluate(animation).dx,
+            _panOffset.evaluate(animation).dy)
+        ..scale(_zoom.evaluate(animation), _zoom.evaluate(animation)),
+      child: Transform.rotate(
+        angle: _rotation.evaluate(animation),
+        child: widget.child,
+      ),
+    );
   }
 }
