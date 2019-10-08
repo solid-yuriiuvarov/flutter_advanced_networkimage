@@ -10,7 +10,9 @@ import 'dart:ui' show hashValues;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_advanced_networkimage/compression_settings.dart';
 import 'package:flutter_advanced_networkimage/utils.dart';
+import 'package:flutter_native_image/flutter_native_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -18,6 +20,7 @@ import 'package:path_provider/path_provider.dart';
 class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
   AdvancedNetworkImage(
     this.url, {
+    this.compressionSettings,
     this.scale: 1.0,
     this.loadingProgress,
     this.header,
@@ -63,6 +66,9 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
 
   /// The image will be displayed when the image failed to load.
   final Uint8List fallbackImage;
+
+  /// The image will be compressed using this settings
+  final CompressionSettings compressionSettings;
 
   LoadingProgress loadingProgress;
 
@@ -111,7 +117,7 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
     if (imageData != null) {
       if (key.loadedCallback != null) key.loadedCallback();
       try {
-        return await ui.instantiateImageCodec(imageData);
+        return await ui.instantiateImageCodec(Uint8List.fromList(imageData));
       } catch (e) {
         debugPrint(e.toString());
       }
@@ -193,7 +199,10 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
       else
         return await http.get(url).timeout(timeoutDuration);
     }, retryLimit, retryDuration);
-    if (_response != null) return _response.bodyBytes;
+    if (_response != null) {
+      Uint8List compressedImage = await _compressImage(_response.bodyBytes);
+      return compressedImage;
+    }
 
     return null;
   }
@@ -227,6 +236,39 @@ class AdvancedNetworkImage extends ImageProvider<AdvancedNetworkImage> {
       'retryDuration:$retryDuration,'
       'timeoutDuration:$timeoutDuration'
       ')';
+
+  Future<Uint8List> _compressImage(Uint8List imageData) async {
+    if (compressionSettings == null || compressionSettings.minCompressionSize > imageData.length) {
+      return imageData;
+    }
+
+    Directory cacheDir = await getTemporaryDirectory();
+
+    if (!cacheDir.existsSync()) cacheDir.createSync();
+
+    final image = await decodeImageFromList(imageData);
+
+    final int targetHeight = (image.height * compressionSettings.percentage / 100).round();
+    final int targetWidth = (image.width * compressionSettings.percentage / 100).round();
+    image.dispose();
+
+    File imageFile = File('${cacheDir.path}/${DateTime.now().millisecondsSinceEpoch}');
+
+    imageFile.writeAsBytesSync(imageData);
+    imageData = null;
+
+    File compressedImage = await FlutterNativeImage.compressImage(
+      imageFile.path,
+      targetHeight: targetHeight,
+      targetWidth: targetWidth,
+      quality: compressionSettings.quality,
+      percentage: compressionSettings.percentage,
+    );
+
+    imageFile.deleteSync();
+
+    return compressedImage.readAsBytesSync();
+  }
 }
 
 /// Clear the disk cache directory then return if it succeed.
